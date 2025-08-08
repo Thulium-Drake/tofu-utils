@@ -1,0 +1,47 @@
+#!/bin/sh
+# Retrieve passphrase from GPG vault and generate PBKDF2 key for OpenTofu
+# Modified from the OpenTofu example
+set -e
+
+# Output the header as a single line:
+echo '{"magic":"OpenTofu-External-Key-Provider","version":1}'
+
+# Read the input metadata.
+INPUT=$(echo -n $(cat))
+PROJECT=$1
+
+# Collect the project passphrase from the vault directory
+VAULTDIR=~/vaults
+PROJECT_PASSWORD=$(cat $VAULTDIR/$PROJECT.gpg | gpg -qd)
+
+# Generate the PBKDF key
+PROJECT_KEY=$(openssl kdf -keylen 16 -kdfopt digest:SHA512 -kdfopt pass:$PROJECT_PASSWORD -kdfopt salt:salt -kdfopt iter:1000000 -binary PBKDF2 | base64)
+
+if [ "${INPUT}" = "null" ]; then
+  # We don't have metadata and shouldn't output a decryption key.
+  cat << EOF
+{
+  "keys":{
+    "encryption_key":"$PROJECT_KEY"
+  },
+  "meta":{
+    "external_data":{}
+  }
+}
+EOF
+else
+
+  # We have metadata and should output a decryption key. In our simplified case
+  # it is the same as the encryption key.
+  cat << EOF
+{
+  "keys":{
+    "encryption_key":"$PROJECT_KEY",
+    "decryption_key":"$PROJECT_KEY"
+  },
+  "meta":{
+    "external_data":{}
+  }
+}
+EOF
+fi
